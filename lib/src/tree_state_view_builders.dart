@@ -8,8 +8,6 @@ import './current_tree_state_provider.dart';
 typedef BuildTreeStateView = Widget Function(
     BuildContext context, _StateDataList _stateDataList, CurrentState currentState);
 
-//typedef DataStreamResolver = ValueStream? Function(CurrentState);
-
 typedef CurrentDescendantChanged = void Function(StateKey descendantKey, CurrentState currentState);
 
 abstract class _TreeStateViewBuilderBase extends StatefulWidget {
@@ -88,6 +86,7 @@ class _TreeStateViewBuilderBaseState extends State<_TreeStateViewBuilderBase> {
     assert(stateMachineContext != null);
 
     var currentState = stateMachineContext!.currentState;
+    if (!currentState.isInState(widget.stateKey)) return;
     assert(currentState.isInState(widget.stateKey));
 
     var stateMachine = currentState.stateMachine;
@@ -104,7 +103,7 @@ class _TreeStateViewBuilderBaseState extends State<_TreeStateViewBuilderBase> {
     var dataStreams = widget._dataStreamResolvers
         .map((resolve) {
           var stream = resolve(currentState);
-          assert(stream != null, 'Data stream for state ${widget.stateKey} could not be resolved');
+          assert(stream != null, 'Data stream for state ${resolve.stateKey} could not be resolved');
           assert(stream!.hasValue, 'A resolved data stream should have a value');
           if (stream != null) initialValues.add(stream.value);
           return stream;
@@ -127,6 +126,10 @@ class _TreeStateViewBuilderBaseState extends State<_TreeStateViewBuilderBase> {
         setState(() {
           _error = AsyncError(err, stackTrace);
         });
+      },
+      onDone: () => {
+        print(
+            'CombineLatestDone for data streams ${widget._dataStreamResolvers.map((e) => e.stateKey.toString()).join(', ')}')
       },
     );
   }
@@ -253,9 +256,9 @@ class _TypeLiteral<T> {
 // Helper class to re-use resolver instances so that that we don't do extraneous work in
 // _TreeStateViewBuilderBaseState.didUpdateWidget
 class _DataStreamResolver<D> {
-  final StateKey? _stateKey;
+  final StateKey? stateKey;
   static final _resolversByType = <String, _DataStreamResolver>{};
-  _DataStreamResolver._(this._stateKey);
+  _DataStreamResolver._(this.stateKey);
 
   factory _DataStreamResolver(StateKey? stateKey) {
     var key = '$stateKey-$D';
@@ -267,5 +270,5 @@ class _DataStreamResolver<D> {
     return resolver as _DataStreamResolver<D>;
   }
 
-  ValueStream? call(CurrentState currentState) => currentState.data<D>(_stateKey);
+  ValueStream? call(CurrentState currentState) => currentState.data<D>(stateKey);
 }

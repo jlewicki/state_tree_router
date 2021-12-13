@@ -23,20 +23,19 @@ class CurrentTreeStateProvider extends StatelessWidget {
       );
 
   static TreeStateMachineInfo? of(BuildContext context) {
-    var inheritedTheme = context.dependOnInheritedWidgetOfExactType<_InheritedStateMachineInfo>();
-    return inheritedTheme != null ? TreeStateMachineInfo(inheritedTheme.currentState) : null;
+    var inheritedInfo = context.dependOnInheritedWidgetOfExactType<_InheritedStateMachineInfo>();
+    return inheritedInfo != null ? TreeStateMachineInfo(inheritedInfo.currentState) : null;
   }
 }
 
 class _InheritedStateMachineInfo extends InheritedWidget {
-  _InheritedStateMachineInfo({
+  const _InheritedStateMachineInfo({
     Key? key,
     required this.currentState,
     required Widget child,
   }) : super(key: key, child: child);
 
   final CurrentState currentState;
-  late final StateKey _currentStateKey = currentState.key;
 
   @override
   bool updateShouldNotify(_InheritedStateMachineInfo old) {
