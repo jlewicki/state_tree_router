@@ -47,17 +47,6 @@ class _TreeStateViewBuilderBaseState extends State<_TreeStateViewBuilderBase> {
     }
   }
 
-  bool _areResolversEqual(List<_DataStreamResolver> otherResolvers) {
-    var resovlers = widget._dataStreamResolvers;
-    if (otherResolvers.length == widget._dataStreamResolvers.length) {
-      for (var i = 0; i < otherResolvers.length; i++) {
-        if (otherResolvers[i] != resovlers[i]) return false;
-      }
-      return true;
-    }
-    return false;
-  }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -137,6 +126,17 @@ class _TreeStateViewBuilderBaseState extends State<_TreeStateViewBuilderBase> {
   void _unsubscribe() {
     _combinedDataSubscription?.cancel();
     _activeDescendantSubscription?.cancel();
+  }
+
+  bool _areResolversEqual(List<_DataStreamResolver> otherResolvers) {
+    var resovlers = widget._dataStreamResolvers;
+    if (otherResolvers.length == widget._dataStreamResolvers.length) {
+      for (var i = 0; i < otherResolvers.length; i++) {
+        if (otherResolvers[i] != resovlers[i]) return false;
+      }
+      return true;
+    }
+    return false;
   }
 }
 
