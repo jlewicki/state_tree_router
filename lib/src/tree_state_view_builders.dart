@@ -14,18 +14,14 @@ abstract class _TreeStateViewBuilderBase extends StatefulWidget {
   const _TreeStateViewBuilderBase({
     Key? key,
     required this.stateKey,
-    //required this.dataStreamResolvers,
     required this.builder,
     this.onCurrentDescendantChanged,
   }) : super(key: key);
 
   final StateKey stateKey;
-
-  List<_DataStreamResolver> get _dataStreamResolvers;
-
   final BuildTreeStateView builder;
-
   final CurrentDescendantChanged? onCurrentDescendantChanged;
+  List<_DataStreamResolver> get _dataStreamResolvers;
 }
 
 class _TreeStateViewBuilderBaseState extends State<_TreeStateViewBuilderBase> {
@@ -76,12 +72,12 @@ class _TreeStateViewBuilderBaseState extends State<_TreeStateViewBuilderBase> {
 
     var currentState = stateMachineContext!.currentState;
     if (!currentState.isInState(widget.stateKey)) return;
-    assert(currentState.isInState(widget.stateKey));
 
     var stateMachine = currentState.stateMachine;
     var currentDescendantStream = stateMachine.transitions
         .where((t) => !t.exitPath.contains(widget.stateKey))
         .map((t) => t.to);
+
     if (widget.onCurrentDescendantChanged != null) {
       _activeDescendantSubscription = currentDescendantStream.listen(
         (descendantKey) => widget.onCurrentDescendantChanged!(descendantKey, currentState),
@@ -182,7 +178,7 @@ class TreeStateViewBuilder2<D, DAnc> extends _TreeStateViewBuilderBase {
     required StateKey stateKey,
     required BuildTreeStateView2<D, DAnc> builder,
     StateKey? ancestorStateKey,
-    CurrentDescendantChanged? currentDescendantChanged,
+    CurrentDescendantChanged? onCurrentDescendantChanged,
   })  : _dataStreamResolvers = [
           _DataStreamResolver<D>(stateKey),
           _DataStreamResolver<DAnc>(ancestorStateKey),
@@ -190,7 +186,7 @@ class TreeStateViewBuilder2<D, DAnc> extends _TreeStateViewBuilderBase {
         super(
             key: key,
             stateKey: stateKey,
-            onCurrentDescendantChanged: currentDescendantChanged,
+            onCurrentDescendantChanged: onCurrentDescendantChanged,
             builder: (context, dataList, currentState) =>
                 builder(context, dataList.get<D>(0), dataList.get<DAnc>(1), currentState));
 
