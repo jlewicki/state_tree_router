@@ -2,15 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:tree_state_machine/tree_state_machine.dart';
-import 'package:tree_state_router/tree_state_router.dart';
 
 class TreeStateMachineInfo {
   final CurrentState currentState;
   TreeStateMachineInfo(this.currentState);
 }
 
-class CurrentTreeStateProvider extends StatelessWidget {
-  const CurrentTreeStateProvider({
+/// Provides a [TreeStateMachineInfo] value to descendant widgets.
+class TreeStateMachineProvider extends StatelessWidget {
+  const TreeStateMachineProvider({
     Key? key,
     required this.currentState,
     required this.child,
@@ -42,35 +42,46 @@ class _InheritedStateMachineInfo extends InheritedWidget {
 
   @override
   bool updateShouldNotify(_InheritedStateMachineInfo old) {
-    //var changed = _currentStateKey != old._currentStateKey;
     var changed = currentState != old.currentState;
     return changed;
   }
 }
 
-class TreeStateEvents extends StatefulWidget {
-  const TreeStateEvents({
+/// A widget for receiving notifications from a [TreeStateMachine].
+///
+/// The state machine providing the events is obtained using [TreeStateMachineProvider.of].
+class TreeStateMachineEvents extends StatefulWidget {
+  const TreeStateMachineEvents({
     Key? key,
     required this.child,
-    required this.stateKey,
-    this.onCurrentDescendantChanged,
+    this.transitionRootKey,
+    this.onTransition,
   }) : super(key: key);
 
+  /// The widget below this widget in the tree.
   final Widget child;
-  final StateKey stateKey;
-  final CurrentDescendantChanged? onCurrentDescendantChanged;
+
+  /// Optional state key indicating a state that is used as a root for transition events.
+  ///
+  /// If provided, [onTransition] will be called only for transitions that occur between states that
+  /// are desecendant of the transition root.
+  final StateKey? transitionRootKey;
+
+  /// Called when a state transition has occurred within the state machine.
+  final void Function(Transition)? onTransition;
 
   @override
-  State<TreeStateEvents> createState() => TreeStateEventsState();
+  State createState() => _TreeStateMachineEventsState();
 }
 
-class TreeStateEventsState extends State<TreeStateEvents> {
-  StreamSubscription? _activeDescendantSubscription;
+class _TreeStateMachineEventsState extends State<TreeStateMachineEvents> {
+  StreamSubscription? _transitionSubscription;
 
   @override
-  void didUpdateWidget(TreeStateEvents oldWidget) {
+  void didUpdateWidget(TreeStateMachineEvents oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.onCurrentDescendantChanged != oldWidget.onCurrentDescendantChanged) {
+    if (widget.onTransition != oldWidget.onTransition ||
+        widget.transitionRootKey != oldWidget.transitionRootKey) {
       _unsubscribe();
       _subscribe();
     }
@@ -93,29 +104,26 @@ class TreeStateEventsState extends State<TreeStateEvents> {
   Widget build(BuildContext context) => widget.child;
 
   void _subscribe() {
-    if (widget.onCurrentDescendantChanged == null) {
+    if (widget.onTransition == null) {
       return;
     }
 
-    var stateMachineContext = CurrentTreeStateProvider.of(context);
-    assert(stateMachineContext != null);
-
-    var currentState = stateMachineContext!.currentState;
-    if (!currentState.isInState(widget.stateKey)) {
+    var stateMachineContext = TreeStateMachineProvider.of(context);
+    if (stateMachineContext == null) {
       return;
     }
 
+    var currentState = stateMachineContext.currentState;
     var stateMachine = currentState.stateMachine;
-    var currentDescendantStream = stateMachine.transitions
-        .where((t) => !t.exitPath.contains(widget.stateKey))
-        .map((t) => t.to);
 
-    _activeDescendantSubscription = currentDescendantStream.listen(
-      (descendantKey) => widget.onCurrentDescendantChanged!(descendantKey, currentState),
-    );
+    var transtitions = widget.transitionRootKey != null
+        ? stateMachine.transitions.where((t) => !t.exitPath.contains(widget.transitionRootKey))
+        : stateMachine.transitions;
+
+    _transitionSubscription = transtitions.listen(widget.onTransition);
   }
 
   void _unsubscribe() {
-    _activeDescendantSubscription?.cancel();
+    _transitionSubscription?.cancel();
   }
 }

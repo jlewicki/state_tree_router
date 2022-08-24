@@ -1,22 +1,32 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
+import 'package:state_tree_router/src/tree_state_machine_provider.dart';
 import 'package:tree_state_machine/async.dart';
 import 'package:tree_state_machine/tree_state_machine.dart';
-import './current_tree_state_provider.dart';
 
-typedef TreeStateDataListWidgetBuilder = Widget Function(
+typedef _TreeStateDataListWidgetBuilder = Widget Function(
   BuildContext context,
   List stateDataList,
   CurrentState currentState,
 );
 
+/// A function that constructs widget that visualizes a data tree state with data type of [D].
+///
+/// The function is provided the current [stateData] for the state, and the [currentState] of the
+/// tree state machine.
 typedef TreeStateWidgetBuilder<D> = Widget Function(
   BuildContext context,
   D stateData,
   CurrentState currentState,
 );
 
+/// A function that constructs widget that visualizes a data tree state with data type of [D], using
+/// data from an ancestor data tree state of with data type [DAnc].
+///
+/// The function is provided the current [stateData] and [ancestorStateData] for the state and its
+/// ancestor, along with the [currentState] of the tree state machine.
 typedef TreeStateWidgetBuilder2<D, DAnc> = Widget Function(
   BuildContext context,
   D stateData,
@@ -24,6 +34,11 @@ typedef TreeStateWidgetBuilder2<D, DAnc> = Widget Function(
   CurrentState currentState,
 );
 
+/// A function that constructs widget that visualizes a data tree state with data type of [D], using
+/// data from two ancestor data tree states of with data type [DAnc] and [DAnc2].
+///
+/// The function is provided the current [stateData], [ancestorStateData], and [ancestorStateData2]
+/// for the state and its ancestors, along with the [currentState] of the tree state machine.
 typedef TreeStateWidgetBuilder3<D, DAnc, DAnc2> = Widget Function(
   BuildContext context,
   D stateData,
@@ -32,23 +47,23 @@ typedef TreeStateWidgetBuilder3<D, DAnc, DAnc2> = Widget Function(
   CurrentState currentState,
 );
 
-abstract class BaseTreeStateBuilder extends StatefulWidget {
-  const BaseTreeStateBuilder(
+abstract class _BaseTreeStateBuilder extends StatefulWidget {
+  const _BaseTreeStateBuilder(
     Key? key,
     this.stateKey,
     this.stateDataResolvers,
-    this.widgetBuilder,
+    this._widgetBuilder,
   ) : super(key: key);
 
   final StateKey stateKey;
   final List<StateDataResolver> stateDataResolvers;
-  final TreeStateDataListWidgetBuilder widgetBuilder;
+  final _TreeStateDataListWidgetBuilder _widgetBuilder;
 
   @override
-  TreeStateBuilderState createState() => TreeStateBuilderState();
+  _TreeStateBuilderState createState() => _TreeStateBuilderState();
 }
 
-class TreeStateBuilder<D> extends BaseTreeStateBuilder {
+class TreeStateBuilder<D> extends _BaseTreeStateBuilder {
   TreeStateBuilder({
     Key? key,
     required StateKey stateKey,
@@ -64,7 +79,7 @@ class TreeStateBuilder<D> extends BaseTreeStateBuilder {
                 ));
 }
 
-class TreeStateBuilder2<D, DAnc> extends BaseTreeStateBuilder {
+class TreeStateBuilder2<D, DAnc> extends _BaseTreeStateBuilder {
   TreeStateBuilder2({
     Key? key,
     required StateKey stateKey,
@@ -81,7 +96,7 @@ class TreeStateBuilder2<D, DAnc> extends BaseTreeStateBuilder {
                 ));
 }
 
-class TreeStateBuilder3<D, DAnc1, DAnc2> extends BaseTreeStateBuilder {
+class TreeStateBuilder3<D, DAnc1, DAnc2> extends _BaseTreeStateBuilder {
   TreeStateBuilder3({
     Key? key,
     required StateKey stateKey,
@@ -99,18 +114,18 @@ class TreeStateBuilder3<D, DAnc1, DAnc2> extends BaseTreeStateBuilder {
                 ));
 }
 
-class TreeStateBuilderState extends State<BaseTreeStateBuilder> {
+class _TreeStateBuilderState extends State<_BaseTreeStateBuilder> {
   StreamSubscription? _combinedDataSubscription;
   StreamSubscription? _activeDescendantSubscription;
   List<dynamic>? _stateDataList;
   AsyncError? _error;
+  late final Logger _logger = Logger('_TreeStateBuilderState.${widget.stateKey}');
 
   @override
-  void didUpdateWidget(BaseTreeStateBuilder oldWidget) {
+  void didUpdateWidget(_BaseTreeStateBuilder oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.stateKey != oldWidget.stateKey ||
         !_areResolversEqual(oldWidget.stateDataResolvers)) {
-      //|| widget.onCurrentDescendantChanged != oldWidget.onCurrentDescendantChanged) {
       _unsubscribe();
       _subscribe();
     }
@@ -131,30 +146,20 @@ class TreeStateBuilderState extends State<BaseTreeStateBuilder> {
 
   @override
   Widget build(BuildContext context) {
-    var stateMachineContext = CurrentTreeStateProvider.of(context);
+    var stateMachineContext = TreeStateMachineProvider.of(context);
     assert(stateMachineContext != null);
     assert(_stateDataList != null);
     return _error != null
         ? ErrorWidget(_error!)
-        : widget.widgetBuilder(context, _stateDataList!, stateMachineContext!.currentState);
+        : widget._widgetBuilder(context, _stateDataList!, stateMachineContext!.currentState);
   }
 
   void _subscribe() {
-    var stateMachineContext = CurrentTreeStateProvider.of(context);
+    var stateMachineContext = TreeStateMachineProvider.of(context);
     assert(stateMachineContext != null);
 
     var currentState = stateMachineContext!.currentState;
     if (!currentState.isInState(widget.stateKey)) return;
-
-    // if (widget.onCurrentDescendantChanged != null) {
-    //var stateMachine = currentState.stateMachine;
-    // var currentDescendantStream = stateMachine.transitions
-    //     .where((t) => !t.exitPath.contains(widget.stateKey))
-    //     .map((t) => t.to);
-    //   _activeDescendantSubscription = currentDescendantStream.listen(
-    //     (descendantKey) => widget.onCurrentDescendantChanged!(descendantKey, currentState),
-    //   );
-    // }
 
     var initialValues = <dynamic>[];
     var dataStreams = widget.stateDataResolvers
@@ -181,8 +186,7 @@ class TreeStateBuilderState extends State<BaseTreeStateBuilder> {
         setState(() => _error = AsyncError(err, stackTrace));
       },
       onDone: () => {
-        // TODO: replace with Logger
-        print(
+        _logger.finer(
             'CombineLatestDone for data streams ${widget.stateDataResolvers.map((e) => e.stateKey.toString()).join(', ')}')
       },
     );

@@ -1,4 +1,4 @@
-name: tree_state_router
+name: state_tree_router
 description: A new Flutter package project.
 version: 0.0.1
 homepage:
@@ -11,6 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
   async: ^2.8.2
+  collection: ^1.16.0
   logging: ^1.0.2
   tree_state_machine: ^2.2.1
    # path: ./../tree_state_machine
