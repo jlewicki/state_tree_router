@@ -22,15 +22,19 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
   /// Creates a [StateTreeRouterDelegate].
   StateTreeRouterDelegate({
     required this.stateMachine,
-    List<TreeStatePage> treeStatePages = const <TreeStatePage>[],
+    required List<TreeStatePage> pages,
     this.scaffoldPages = false,
-  }) : _treeStatePages = _toPageMap(treeStatePages, 'stateTreePages');
+  })  : pages = pages.toList(),
+        _pageMap = _toPageMap(pages, 'stateTreePages');
+
+  /// The list of pages that can be displayed by this router delegate.
+  final List<TreeStatePage> pages;
 
   /// The [StateTreeBuilder] that defines the state tree providing navigation notifications to this
   /// router.
   final TreeStateMachine stateMachine;
 
-  /// Returns 'true' if  each page should be wrapped in a [Scaffold] widget.
+  /// Returns 'true' if the content of page should be wrapped in a [Scaffold] widget.
   ///
   /// This is intended as a convenience to page developers, so that each page does not have to be
   /// scaffolded individually.
@@ -40,7 +44,7 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
   @override
   final navigatorKey = GlobalKey<NavigatorState>(debugLabel: 'StateTreeRouterDelegate');
 
-  final Map<StateKey, TreeStatePage> _treeStatePages;
+  final Map<StateKey, TreeStatePage> _pageMap;
   final Logger _log = Logger('StateTreeRouterDelegate');
   CurrentState? _currentState;
 
@@ -61,7 +65,7 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
     // build may be called before the setNewRoutePath future completes, so we display a loading
     // indicator while that is in progress
     var pages = _currentState != null
-        ? _createPages(_treeStatePages, _currentState!, _log)
+        ? _createPages(_pageMap, _currentState!, _log)
             .map((page) => scaffoldPages ? _scaffoldPage(page) : page)
             .toList()
         : [_createLoadingPage()];
@@ -167,21 +171,37 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
   }
 }
 
+/// A [RouterDelegate] that receives routing information from the state transitions of the
+/// nested [TreeStateMachine] in a machine tree state.
+///
+/// This router delegate is intended for use with nested routing, providing visualization for the
+/// states of [TreeStateMachine] nested within a state of an outer [TreeStateMachine].
+/// Top level navigation based on the outer state machine should use [StateTreeRouterDelegate].
+///
+/// An application configures [NestedStateTreeRouterDelegate] with a list of [TreeStatePage]s that
+/// indicate how individual states of the nested state machine should be visualized.
+///
+/// As state transitions occur within the state machine, the router delegate will determine there is
+/// a [TreeStatePage] that corresponds to the an active state of the state machine.  If a page is
+/// available, it is displayed by the [Navigator] returned by [build].
 class NestedStateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
     with ChangeNotifier, PopNavigatorRouterDelegateMixin {
   NestedStateTreeRouterDelegate({
     required List<TreeStatePage> pages,
-    required this.stateKey,
-  }) : pages = StateTreeRouterDelegate._toPageMap(
+  })  : pages = pages.toList(),
+        _pageMap = StateTreeRouterDelegate._toPageMap(
           pages,
           'nestedStateTreePages',
         );
 
+  /// The list of pages that can be displayed by this router delegate.
+  final List<TreeStatePage> pages;
+
+  /// The key used for retrieving the current navigator.
   @override
   final navigatorKey = GlobalKey<NavigatorState>(debugLabel: 'NestedStateTreeRouterDelegate');
 
-  final Map<StateKey, TreeStatePage> pages;
-  final StateKey stateKey;
+  final Map<StateKey, TreeStatePage> _pageMap;
 
   final _log = Logger('tree_state_router.NestedMachineRouterDelegate');
 
@@ -245,7 +265,7 @@ class NestedStateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
   }
 
   List<TreeStatePage> _createStateTreePages(BuildContext context, CurrentState nestedCurrentState) {
-    return StateTreeRouterDelegate._createPages(pages, nestedCurrentState, _log).toList();
+    return StateTreeRouterDelegate._createPages(_pageMap, nestedCurrentState, _log).toList();
   }
 }
 
@@ -375,7 +395,8 @@ class StateTreeRouteInfoParser extends RouteInformationParser<StateTreeRouteInfo
     if (routeInformation.location == '/') {
       return SynchronousFuture(StateTreeRouteInfo(_rootKey));
     }
-    throw UnimplementedError();
+
+    throw UnimplementedError('Route parsing is not yet supported.');
   }
 }
 

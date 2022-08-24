@@ -209,7 +209,7 @@ class _TreeStateBuilderState extends State<_BaseTreeStateBuilder> {
   }
 }
 
-extension ListExtensions on List<dynamic> {
+extension _ListExtensions on List<dynamic> {
   T getAs<T>(int index) {
     return const _TypeLiteral<void>().type == T ? null as T : this[index] as T;
   }
