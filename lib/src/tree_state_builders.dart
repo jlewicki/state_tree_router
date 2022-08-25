@@ -12,11 +12,19 @@ typedef _TreeStateDataListWidgetBuilder = Widget Function(
   CurrentState currentState,
 );
 
+/// A function that constructs widget that visualizes an active tree state in a state machine.
+///
+/// The function is provided the [currentState] of the tree state machine.
+typedef TreeStateWidgetBuilder = Widget Function(
+  BuildContext context,
+  CurrentState currentState,
+);
+
 /// A function that constructs widget that visualizes a data tree state with data type of [D].
 ///
 /// The function is provided the current [stateData] for the state, and the [currentState] of the
 /// tree state machine.
-typedef TreeStateWidgetBuilder<D> = Widget Function(
+typedef DataTreeStateWidgetBuilder<D> = Widget Function(
   BuildContext context,
   D stateData,
   CurrentState currentState,
@@ -27,7 +35,7 @@ typedef TreeStateWidgetBuilder<D> = Widget Function(
 ///
 /// The function is provided the current [stateData] and [ancestorStateData] for the state and its
 /// ancestor, along with the [currentState] of the tree state machine.
-typedef TreeStateWidgetBuilder2<D, DAnc> = Widget Function(
+typedef DataTreeStateWidgetBuilder2<D, DAnc> = Widget Function(
   BuildContext context,
   D stateData,
   DAnc ancestorStateData,
@@ -39,7 +47,7 @@ typedef TreeStateWidgetBuilder2<D, DAnc> = Widget Function(
 ///
 /// The function is provided the current [stateData], [ancestorStateData], and [ancestorStateData2]
 /// for the state and its ancestors, along with the [currentState] of the tree state machine.
-typedef TreeStateWidgetBuilder3<D, DAnc, DAnc2> = Widget Function(
+typedef DataTreeStateWidgetBuilder3<D, DAnc, DAnc2> = Widget Function(
   BuildContext context,
   D stateData,
   DAnc ancestorStateData,
@@ -47,8 +55,55 @@ typedef TreeStateWidgetBuilder3<D, DAnc, DAnc2> = Widget Function(
   CurrentState currentState,
 );
 
-abstract class _BaseTreeStateBuilder extends StatefulWidget {
-  const _BaseTreeStateBuilder(
+/// A widget that builds itself when a specific tree state is an active state in a [TreeStateMachine].
+///
+/// This widget obtains a state machine using [TreeStateMachineProvider.of], and therefore it is a
+/// requirement that a [TreeStateMachineProvider] is above this widget in the widget tree.
+///
+/// The tree state for which this widget builds itself is identified by [stateKey]. If this state
+/// is an active state in the state machine, the [builder] function is called to obtain the widget
+/// to display.
+class TreeStateBuilder extends StatelessWidget {
+  const TreeStateBuilder({
+    Key? key,
+    required this.stateKey,
+    required this.builder,
+  }) : super(key: key);
+
+  /// The state key of the tree state that is built by this builder.
+  final StateKey stateKey;
+
+  /// The function that produces the widget that visualizes the tree state.
+  final TreeStateWidgetBuilder builder;
+
+  @override
+  Widget build(BuildContext context) {
+    var stateMachineInfo = TreeStateMachineProvider.of(context);
+    if (stateMachineInfo == null) {
+      return ErrorWidget.withDetails(
+        message: 'Unable to build widget for tree state "$stateKey", '
+            'because a state machine was not found in the widget tree.',
+      );
+    }
+
+    if (!stateMachineInfo.currentState.isInState(stateKey)) {
+      Widget widget = Container();
+      assert(() {
+        widget = ErrorWidget.withDetails(
+          message: 'Unable to build widget for tree state "$stateKey", '
+              'because "$stateKey" is not an active state in the state machine.',
+        );
+        return true;
+      }());
+      return widget;
+    }
+
+    return builder(context, stateMachineInfo.currentState);
+  }
+}
+
+abstract class _BaseDataTreeStateBuilder extends StatefulWidget {
+  const _BaseDataTreeStateBuilder(
     Key? key,
     this.stateKey,
     this.stateDataResolvers,
@@ -63,11 +118,13 @@ abstract class _BaseTreeStateBuilder extends StatefulWidget {
   _TreeStateBuilderState createState() => _TreeStateBuilderState();
 }
 
-class TreeStateBuilder<D> extends _BaseTreeStateBuilder {
-  TreeStateBuilder({
+/// A widget that builds itself based on the latest state data of a data tree state in a
+/// [TreeStateMachine].
+class DataTreeStateBuilder<D> extends _BaseDataTreeStateBuilder {
+  DataTreeStateBuilder({
     Key? key,
     required StateKey stateKey,
-    required TreeStateWidgetBuilder<D> builder,
+    required DataTreeStateWidgetBuilder<D> builder,
   }) : super(
             key,
             stateKey,
@@ -79,11 +136,11 @@ class TreeStateBuilder<D> extends _BaseTreeStateBuilder {
                 ));
 }
 
-class TreeStateBuilder2<D, DAnc> extends _BaseTreeStateBuilder {
-  TreeStateBuilder2({
+class DataTreeStateBuilder2<D, DAnc> extends _BaseDataTreeStateBuilder {
+  DataTreeStateBuilder2({
     Key? key,
     required StateKey stateKey,
-    required TreeStateWidgetBuilder2<D, DAnc> builder,
+    required DataTreeStateWidgetBuilder2<D, DAnc> builder,
   }) : super(
             key,
             stateKey,
@@ -96,11 +153,11 @@ class TreeStateBuilder2<D, DAnc> extends _BaseTreeStateBuilder {
                 ));
 }
 
-class TreeStateBuilder3<D, DAnc1, DAnc2> extends _BaseTreeStateBuilder {
-  TreeStateBuilder3({
+class DataTreeStateBuilder3<D, DAnc1, DAnc2> extends _BaseDataTreeStateBuilder {
+  DataTreeStateBuilder3({
     Key? key,
     required StateKey stateKey,
-    required TreeStateWidgetBuilder3<D, DAnc1, DAnc2> builder,
+    required DataTreeStateWidgetBuilder3<D, DAnc1, DAnc2> builder,
   }) : super(
             key,
             stateKey,
@@ -114,7 +171,7 @@ class TreeStateBuilder3<D, DAnc1, DAnc2> extends _BaseTreeStateBuilder {
                 ));
 }
 
-class _TreeStateBuilderState extends State<_BaseTreeStateBuilder> {
+class _TreeStateBuilderState extends State<_BaseDataTreeStateBuilder> {
   StreamSubscription? _combinedDataSubscription;
   StreamSubscription? _activeDescendantSubscription;
   List<dynamic>? _stateDataList;
@@ -122,7 +179,7 @@ class _TreeStateBuilderState extends State<_BaseTreeStateBuilder> {
   late final Logger _logger = Logger('_TreeStateBuilderState.${widget.stateKey}');
 
   @override
-  void didUpdateWidget(_BaseTreeStateBuilder oldWidget) {
+  void didUpdateWidget(_BaseDataTreeStateBuilder oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.stateKey != oldWidget.stateKey ||
         !_areResolversEqual(oldWidget.stateDataResolvers)) {

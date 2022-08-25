@@ -119,13 +119,18 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
   }
 
   Page _createEmptyPagesPage(List<StateKey> activeStates) {
+    Widget content = Container();
+    assert(() {
+      content = ErrorWidget.withDetails(
+          message:
+              'No tree state pages are available to display active states ${activeStates.join(',')}.\n\n'
+              'Make sure add pages to the treeStatePages property of the TreeStateRouterDelegate '
+              'that can display one of the states.');
+      return true;
+    }());
     return MaterialPage(
       child: Center(
-        child: ErrorWidget.withDetails(
-            message:
-                'No tree state pages are available to display active states ${activeStates.join(',')}.\n\n'
-                'Make sure add pages to the treeStatePages property of the TreeStateRouterDelegate '
-                'that can display one of the states.'),
+        child: content,
       ),
     );
   }
@@ -344,11 +349,13 @@ class TreeStatePage extends MaterialPage<void> {
     Widget Function(BuildContext, CurrentState) builder,
   ) {
     return TreeStatePage._(
-        stateKey,
-        (_) => TreeStateBuilder(
-              stateKey: stateKey,
-              builder: (b, _, currentState) => builder(b, currentState),
-            ));
+      stateKey,
+      (_) => TreeStateBuilder(
+        key: ValueKey(stateKey),
+        stateKey: stateKey,
+        builder: builder,
+      ),
+    );
   }
 
   /// Creates a [TreeStatePage] that displays the data tree state, with state data of type [D] and
@@ -359,7 +366,8 @@ class TreeStatePage extends MaterialPage<void> {
   ) {
     return TreeStatePage._(
       stateKey,
-      (buildContext) => TreeStateBuilder<D>(
+      (buildContext) => DataTreeStateBuilder<D>(
+        key: ValueKey(stateKey),
         stateKey: stateKey,
         builder: build,
       ),
@@ -372,7 +380,8 @@ class TreeStatePage extends MaterialPage<void> {
   ) {
     return TreeStatePage._(
       stateKey,
-      (buildContext) => TreeStateBuilder2<D, DAnc>(
+      (buildContext) => DataTreeStateBuilder2<D, DAnc>(
+        key: ValueKey(stateKey),
         stateKey: stateKey,
         builder: build,
       ),
