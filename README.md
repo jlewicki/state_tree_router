@@ -17,15 +17,132 @@ with the router delegatea.
 
 
 ## Usage
-
-
-
-
-TODO: Include short and useful examples for package users. Add longer examples
-to `/example` folder. 
+First let's define a simple state machine that will capitalize a string.
 
 ```dart
-const like = 'sample';
+class States {
+  static const enterText = StateKey('simple_enterText');
+  static const showUppercase = StateKey('simple_showUppercase');
+  static const finished = StateKey('simple_finished');
+}
+
+enum Messages { finish }
+
+class ToUppercase {
+  ToUppercase(this.text);
+  final String text;
+}
+
+class SimpleStateTree {
+  StateTreeBuilder treeBuilder() {
+    var b = StateTreeBuilder(initialState: States.enterText);
+    
+    b.state(States.enterText, (b) {
+      b.onMessage<ToUppercase>(
+         (b) => b.goTo(States.showUppercase, 
+         payload: (ctx) => ctx.message.text));
+    });
+
+    b.dataState<String>(
+      States.showUppercase,
+      InitialData.run((ctx) => (ctx.payload as String).toUpperCase()),
+      (b) {
+        b.onMessageValue(Messages.finish, (b) => b.goTo(SimpleStates.finished));
+      },
+    );
+
+    b.finalState(States.finished, emptyFinalState);
+
+    return b;
+  }
+}
+```
+
+Next let's define pages that can display these states: 
+
+```dart
+final enterTextPage = TreeStatePage.forState(SimpleStates.enterText, (buildContext, currentState) {
+  var currentText = '';
+  return Center(
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: <Widget>[
+        StatefulBuilder(
+          builder: (context, setState) => Container(
+            constraints: const BoxConstraints(maxWidth: 300),
+            child: TextField(
+              onChanged: (val) => currentText = val,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'Enter some text',
+              ),
+            ),
+          ),
+        ),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: ElevatedButton(
+              child: const Text('To Uppercase'),
+              onPressed: () => currentState.post(ToUppercase(currentText)),
+            ),
+          ),
+        ]),
+      ],
+    ),
+  );
+});
+
+final toUppercasePage = TreeStatePage.forDataState<String>(
+  SimpleStates.showUppercase,
+  (buildContext, text, currentState) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          'Uppercase text: $text',
+          style: const TextStyle(fontSize: 24),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: ElevatedButton(
+            child: const Text('Done'),
+            onPressed: () => currentState.post(Messages.finish),
+          ),
+        ),
+      ],
+    );
+  },
+);
+```
+
+Finally let's define an app that will perform routing based on the state transitions of the state machinhe.
+```dart
+/// Now define an app
+class SimpleApp extends StatefulWidget {
+  const Simple({Key? key}) : super(key: key);
+  @override
+  State<App> createState() => _SimpleAppState();
+}
+
+class _SimpleAppState extends State<SimpleApp> {
+   late final treeBuilder = SimpleStateMachine().treeBuilder();
+   @override
+   Widget build(BuildContext context) {
+    return MaterialApp.router(
+      routeInformationParser: StateTreeRouteInfoParser(treeBuilder.rootKey),
+      routerDelegate: StateTreeRouterDelegate(
+         stateMachine: TreeStateMachine(treeBuilder),
+         scaffoldPages: true,
+         pages: [
+            enterTextPage,
+            toUppercasePage,
+         ],
+      ),
+      color: Colors.amberAccent,
+    );
+  }
+}
 ```
 
 ## Additional information
