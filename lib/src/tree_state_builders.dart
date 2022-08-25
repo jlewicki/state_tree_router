@@ -221,7 +221,7 @@ class _TypeLiteral<T> {
 }
 
 // Helper class to re-use resolver instances so that that we don't do extraneous work in
-// _TreeStateViewBuilderBaseState.didUpdateWidget
+// _TreeStateBuilderState.didUpdateWidget
 class StateDataResolver<D> {
   final StateKey? stateKey;
   static final _resolversByType = <String, StateDataResolver>{};
