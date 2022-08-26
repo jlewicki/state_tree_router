@@ -122,10 +122,10 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
     Widget content = Container();
     assert(() {
       content = ErrorWidget.withDetails(
-          message:
-              'No tree state pages are available to display active states ${activeStates.join(',')}.\n\n'
-              'Make sure add pages to the treeStatePages property of the TreeStateRouterDelegate '
-              'that can display one of the states.');
+          message: 'No tree state pages are available to display any of the active states: '
+              '${activeStates.map((s) => '"$s"').join(', ')}.\n\n'
+              'Make sure to add a page that can display one of the states to the '
+              'StateTreeRouterDelegate. ');
       return true;
     }());
     return MaterialPage(
