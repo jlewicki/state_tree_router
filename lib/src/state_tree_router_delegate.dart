@@ -73,7 +73,7 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
     if (pages.isEmpty) {
       _log.warning(
           'No pages available to display active states ${_currentState!.activeStates.join(',')}');
-      pages = [_createEmptyPagesPage(_currentState!.activeStates)];
+      pages = [_createEmptyPagesPage(_currentState!.activeStates, 'StateTreeRouterDelegate')];
     }
 
     var navigator = Navigator(
@@ -93,6 +93,7 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
             currentState: _currentState!,
             child: TreeStateMachineEvents(
               onTransition: _onTransition,
+              onError: _onError,
               child: navigator,
             ),
           )
@@ -100,6 +101,10 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
   }
 
   void _onTransition(Transition transition) {
+    notifyListeners();
+  }
+
+  void _onError(FailedMessage failedMessage) {
     notifyListeners();
   }
 
@@ -118,14 +123,13 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
     );
   }
 
-  Page _createEmptyPagesPage(List<StateKey> activeStates) {
+  static Page _createEmptyPagesPage(List<StateKey> activeStates, String routerName) {
     Widget content = Container();
     assert(() {
       content = ErrorWidget.withDetails(
           message: 'No tree state pages are available to display any of the active states: '
               '${activeStates.map((s) => '"$s"').join(', ')}.\n\n'
-              'Make sure to add a page that can display one of the states to the '
-              'StateTreeRouterDelegate. ');
+              'Make sure to add a page that can display one of the states to the $routerName.');
       return true;
     }());
     return MaterialPage(
@@ -153,10 +157,10 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
         .map((entry) => entry.value!)
         .firstOrNull;
 
-    if (activePage == null) {
-      logger.warning(
-          'No pages created for ${currentState.activeStates.map((e) => "'$e'").join(', ')}');
-    }
+    // if (activePage == null) {
+    //   logger.warning(
+    //       'No pages created for ${currentState.activeStates.map((e) => "'$e'").join(', ')}');
+    // }
 
     return activePage != null ? [activePage] : [];
   }
@@ -194,10 +198,7 @@ class NestedStateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
   NestedStateTreeRouterDelegate({
     required List<TreeStatePage> pages,
   })  : pages = pages.toList(),
-        _pageMap = StateTreeRouterDelegate._toPageMap(
-          pages,
-          'nestedStateTreePages',
-        );
+        _pageMap = StateTreeRouterDelegate._toPageMap(pages, 'pages');
 
   /// The list of pages that can be displayed by this router delegate.
   final List<TreeStatePage> pages;
@@ -278,13 +279,16 @@ class ChildTreeStateRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
     with ChangeNotifier, PopNavigatorRouterDelegateMixin {
   ChildTreeStateRouterDelegate({
     required List<TreeStatePage> pages,
-  }) : _treeStatePages = StateTreeRouterDelegate._toPageMap(
-          pages,
-          'nestedStateTreePages',
-        );
+    this.supportsFinalPage = true,
+  }) : _treeStatePages = StateTreeRouterDelegate._toPageMap(pages, 'pages');
 
   @override
   final navigatorKey = GlobalKey<NavigatorState>(debugLabel: 'ChildTreeStateRouterDelegate');
+
+  /// If `true` (the default), an error page will be displayed if the state machine reaches a final
+  /// state, and there is no page in the pages list that can display that state.
+  final bool supportsFinalPage;
+
   final Map<StateKey, TreeStatePage> _treeStatePages;
   final _log = Logger('ChildTreeStateRouterDelegate');
 
@@ -295,15 +299,43 @@ class ChildTreeStateRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
     assert(false);
   }
 
-  void _onTransition(Transition trans) => notifyListeners();
+  void _onTransition(Transition trans) {
+    if (!trans.isToFinalState || supportsFinalPage) {
+      notifyListeners();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    var currentState = TreeStateMachineProvider.of(context)?.currentState;
+    var stateMachineInfo = TreeStateMachineProvider.of(context);
+    if (stateMachineInfo == null) {
+      var message = 'Unable to find tree state machine in widget tree';
+      _log.warning(message);
+      return ErrorWidget.withDetails(message: message);
+    }
 
-    var pages = currentState != null
-        ? StateTreeRouterDelegate._createPages(_treeStatePages, currentState, _log).toList()
-        : <TreeStatePage>[];
+    var currentState = stateMachineInfo.currentState;
+    var activeStates = currentState.activeStates;
+    var pages = StateTreeRouterDelegate._createPages(_treeStatePages, currentState, _log)
+        .cast<Page>()
+        .toList();
+
+    if (pages.isEmpty) {
+      if (currentState.stateMachine.isDone && !supportsFinalPage) {
+        // If the current state machine is running as a nested machine, then there is likely a
+        // Router with a NestedStateTreeRouterDelegate higher in the widget tree, which will render
+        // a different page when the nested state machine finishes. In this case, a developer will
+        // probably not add a page for the final state to this router delegate (since after all it
+        // will never be displayed), so to avoid emitting warnings just use a transient page with
+        // no visible content.
+        pages = [MaterialPage(child: Container())];
+      } else {
+        _log.warning(
+          'No pages available to display active states ${currentState.activeStates.join(',')}',
+        );
+        pages = [_createEmptyPagesPage(activeStates)];
+      }
+    }
 
     return TreeStateMachineEvents(
       onTransition: _onTransition,
@@ -319,6 +351,11 @@ class ChildTreeStateRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
         },
       ),
     );
+  }
+
+  Page<dynamic> _createEmptyPagesPage(List<StateKey> activeStates) {
+    return StateTreeRouterDelegate._createEmptyPagesPage(
+        activeStates, 'ChildTreeStateRouterDelegate');
   }
 }
 
