@@ -13,7 +13,7 @@ class TreeStateMachineEvents extends StatefulWidget {
     required this.child,
     this.transitionRootKey,
     this.onTransition,
-    this.onError,
+    this.onFailedMessage,
   }) : super(key: key);
 
   /// The widget below this widget in the tree.
@@ -26,10 +26,10 @@ class TreeStateMachineEvents extends StatefulWidget {
   final StateKey? transitionRootKey;
 
   /// Called when a state transition has occurred within the state machine.
-  final void Function(Transition)? onTransition;
+  final void Function(CurrentState, Transition)? onTransition;
 
   /// Called when an error occurs when the state machine processes a message.
-  final void Function(FailedMessage)? onError;
+  final void Function(CurrentState, FailedMessage)? onFailedMessage;
 
   @override
   State createState() => _TreeStateMachineEventsState();
@@ -43,7 +43,7 @@ class _TreeStateMachineEventsState extends State<TreeStateMachineEvents> {
   void didUpdateWidget(TreeStateMachineEvents oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.onTransition != oldWidget.onTransition ||
-        widget.onError != oldWidget.onError ||
+        widget.onFailedMessage != oldWidget.onFailedMessage ||
         widget.transitionRootKey != oldWidget.transitionRootKey) {
       _unsubscribe();
       _subscribe();
@@ -75,20 +75,59 @@ class _TreeStateMachineEventsState extends State<TreeStateMachineEvents> {
     var currentState = stateMachineContext.currentState;
     var stateMachine = currentState.stateMachine;
 
-    if (widget.onError != null) {
-      _errorSubscription = stateMachine.failedMessages.listen(widget.onError);
+    if (widget.onFailedMessage != null) {
+      _errorSubscription = stateMachine.failedMessages
+          .listen((error) => widget.onFailedMessage!(currentState, error));
     }
 
     if (widget.onTransition != null) {
       var transitions = widget.transitionRootKey != null
           ? stateMachine.transitions.where((t) => !t.exitPath.contains(widget.transitionRootKey))
           : stateMachine.transitions;
-      _transitionSubscription = transitions.listen(widget.onTransition);
+      _transitionSubscription =
+          transitions.listen((trans) => widget.onTransition!(currentState, trans));
     }
   }
 
   void _unsubscribe() {
     _transitionSubscription?.cancel();
     _errorSubscription?.cancel();
+  }
+}
+
+class TreeStateMachineErrorDisplay extends StatefulWidget {
+  const TreeStateMachineErrorDisplay({
+    Key? key,
+    required this.errorBuilder,
+    required this.child,
+  }) : super(key: key);
+
+  final Widget child;
+
+  final Widget Function(BuildContext, FailedMessage, CurrentState) errorBuilder;
+
+  @override
+  State<TreeStateMachineErrorDisplay> createState() => _TreeStateMachineErrorDisplayState();
+}
+
+class _TreeStateMachineErrorDisplayState extends State<TreeStateMachineErrorDisplay> {
+  FailedMessage? _failedMessage;
+  CurrentState? _currentState;
+
+  @override
+  Widget build(BuildContext context) {
+    return TreeStateMachineEvents(
+      onFailedMessage: _onFailedMessage,
+      child: _failedMessage != null
+          ? widget.errorBuilder(context, _failedMessage!, _currentState!)
+          : widget.child,
+    );
+  }
+
+  void _onFailedMessage(CurrentState currentState, FailedMessage failedMessage) {
+    setState(() {
+      _failedMessage = failedMessage;
+      _currentState = currentState;
+    });
   }
 }

@@ -162,7 +162,7 @@ packages:
       name: tree_state_machine
       url: "https://pub.dartlang.org"
     source: hosted
-    version: "2.2.1"
+    version: "2.3.0"
   vector_math:
     dependency: transitive
     description:

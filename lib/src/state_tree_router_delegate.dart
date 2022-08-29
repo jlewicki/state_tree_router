@@ -7,6 +7,131 @@ import 'package:state_tree_router/state_tree_router.dart';
 import 'package:tree_state_machine/tree_builders.dart';
 import 'package:tree_state_machine/tree_state_machine.dart';
 
+abstract class _TreeStateMachineRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
+    with ChangeNotifier, PopNavigatorRouterDelegateMixin {
+  _TreeStateMachineRouterDelegate({
+    required Logger logger,
+    required this.pages,
+    this.displayStateMachineErrors = false,
+  })  : _log = logger,
+        _pageMap = _toPageMap(pages);
+
+  /// The list of pages that can be displayed by this router delegate.
+  final List<TreeStatePage> pages;
+
+  /// If `true`, this router delegate will display an [ErrorWidget] when the
+  /// [TreeStateMachine.failedMessages] stream emits an event.
+  ///
+  /// This is primarily useful for debugging purposes.
+  final bool displayStateMachineErrors;
+
+  final Logger _log;
+  final Map<StateKey, TreeStatePage> _pageMap;
+
+  Widget _buildNavigatorWidget(
+    List<Page> pages,
+    CurrentState? currentState, {
+    required bool provideCurrentState,
+  }) {
+    Widget widget = Navigator(
+      key: navigatorKey,
+      transitionDelegate: _TreeStateRouteTransitionDelegate(),
+      pages: pages,
+      onPopPage: _onPopPage,
+    );
+
+    if (currentState != null) {
+      widget = TreeStateMachineEvents(
+        onTransition: _onTransition,
+        child: displayStateMachineErrors
+            ? TreeStateMachineErrorDisplay(
+                child: widget,
+                errorBuilder: _buildErrorWidget,
+              )
+            : widget,
+      );
+    }
+
+    if (provideCurrentState) {
+      widget = TreeStateMachineProvider(currentState: currentState!, child: widget);
+    }
+
+    return widget;
+  }
+
+  /// Creates the stack of pages that should display the current state of the state tree.
+  ///
+  /// Currently this returns a collection of 0 or 1 pages, but once a history feature is added to
+  /// tree_state_machine, this will return a history stack which can be popped by the navigator.
+  @protected
+  Iterable<TreeStatePage> _createPagesForActiveStates(CurrentState currentState) {
+    /// Return the deepest page that maps to an active state. By deepest, we mean the page that
+    /// maps to a state as far as possible from the root state. This gives the current leaf state
+    /// priority in determining the page to display, followed by its parent state, etc.
+    var activePage = currentState.activeStates.reversed
+        .map((stateKey) => MapEntry<StateKey, TreeStatePage?>(stateKey, _pageMap[stateKey]))
+        .where((entry) => entry.value != null)
+        .map((entry) => entry.value!)
+        .firstOrNull;
+
+    return activePage != null ? [activePage] : [];
+  }
+
+  @protected
+  Widget _buildErrorWidget(
+    BuildContext buildContext,
+    FailedMessage error,
+    CurrentState currentState,
+  ) {
+    var msg = 'The state machine failed to process a message.\n\n'
+        'Message: ${error.message.toString()}\n'
+        'Receiving tree state: ${error.receivingState}\n\n'
+        '${error.error.toString()}';
+    return ErrorWidget.withDetails(message: msg);
+  }
+
+  @protected
+  void _onTransition(CurrentState currentState, Transition transition) {
+    notifyListeners();
+  }
+
+  @protected
+  bool _onPopPage(Route<dynamic> route, dynamic result) {
+    _log.finer('Popping page for state ${(route.settings as TreeStatePage).stateKey}');
+    if (!route.didPop(result)) return false;
+    notifyListeners();
+    return true;
+  }
+
+  Page _createEmptyPagesPage(List<StateKey> activeStates, String routerName) {
+    Widget content = Container();
+    assert(() {
+      content = ErrorWidget.withDetails(
+          message: 'No tree state pages are available to display any of the active states: '
+              '${activeStates.map((s) => '"$s"').join(', ')}.\n\n'
+              'Make sure to add a page that can display one of the states to the $routerName.');
+      return true;
+    }());
+
+    return MaterialPage(
+      child: Center(
+        child: content,
+      ),
+    );
+  }
+
+  static Map<StateKey, TreeStatePage> _toPageMap(List<TreeStatePage> pages) {
+    var map = <StateKey, TreeStatePage>{};
+    for (var page in pages) {
+      if (map.containsKey(page.stateKey)) {
+        throw ArgumentError('Duplicate pages defined for state ${page.stateKey}', 'pages');
+      }
+      map[page.stateKey] = page;
+    }
+    return map;
+  }
+}
+
 /// A [RouterDelegate] that receives routing information from the state transitions of a
 /// [TreeStateMachine].
 ///
@@ -17,18 +142,17 @@ import 'package:tree_state_machine/tree_state_machine.dart';
 /// As state transitions occur within the state machine, the router delegate will determine there is
 /// a [TreeStatePage] that corresponds to the an active state of the state machine.  If a page is
 /// available, it is displayed by the [Navigator] returned by [build].
-class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
-    with ChangeNotifier, PopNavigatorRouterDelegateMixin {
-  /// Creates a [StateTreeRouterDelegate].
+class StateTreeRouterDelegate extends _TreeStateMachineRouterDelegate {
   StateTreeRouterDelegate({
     required this.stateMachine,
     required List<TreeStatePage> pages,
     this.scaffoldPages = false,
-  })  : pages = pages.toList(),
-        _pageMap = _toPageMap(pages, 'stateTreePages');
-
-  /// The list of pages that can be displayed by this router delegate.
-  final List<TreeStatePage> pages;
+    bool displayStateMachineErrors = false,
+  }) : super(
+          logger: Logger('StateTreeRouterDelegate'),
+          pages: pages,
+          displayStateMachineErrors: displayStateMachineErrors,
+        );
 
   /// The [StateTreeBuilder] that defines the state tree providing navigation notifications to this
   /// router.
@@ -40,13 +164,11 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
   /// scaffolded individually.
   final bool scaffoldPages;
 
+  CurrentState? _currentState;
+
   /// The key used for retrieving the current navigator.
   @override
   final navigatorKey = GlobalKey<NavigatorState>(debugLabel: 'StateTreeRouterDelegate');
-
-  final Map<StateKey, TreeStatePage> _pageMap;
-  final Logger _log = Logger('StateTreeRouterDelegate');
-  CurrentState? _currentState;
 
   @override
   Future<void> setNewRoutePath(StateTreeRouteInfo configuration) async {
@@ -65,7 +187,7 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
     // build may be called before the setNewRoutePath future completes, so we display a loading
     // indicator while that is in progress
     var pages = _currentState != null
-        ? _createPages(_pageMap, _currentState!, _log)
+        ? _createPagesForActiveStates(_currentState!)
             .map((page) => scaffoldPages ? _scaffoldPage(page) : page)
             .toList()
         : [_createLoadingPage()];
@@ -76,36 +198,7 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
       pages = [_createEmptyPagesPage(_currentState!.activeStates, 'StateTreeRouterDelegate')];
     }
 
-    var navigator = Navigator(
-      key: navigatorKey,
-      transitionDelegate: _TreeStateRouteTransitionDelegate(),
-      pages: pages,
-      onPopPage: (route, result) {
-        _log.finer('Popping page for state ${(route.settings as TreeStatePage).stateKey}');
-        if (!route.didPop(result)) return false;
-        notifyListeners();
-        return true;
-      },
-    );
-
-    return _currentState != null
-        ? TreeStateMachineProvider(
-            currentState: _currentState!,
-            child: TreeStateMachineEvents(
-              onTransition: _onTransition,
-              onError: _onError,
-              child: navigator,
-            ),
-          )
-        : navigator;
-  }
-
-  void _onTransition(Transition transition) {
-    notifyListeners();
-  }
-
-  void _onError(FailedMessage failedMessage) {
-    notifyListeners();
+    return _buildNavigatorWidget(pages, _currentState, provideCurrentState: _currentState != null);
   }
 
   Page _scaffoldPage(TreeStatePage page) {
@@ -122,61 +215,69 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
       ),
     );
   }
+}
 
-  static Page _createEmptyPagesPage(List<StateKey> activeStates, String routerName) {
-    Widget content = Container();
-    assert(() {
-      content = ErrorWidget.withDetails(
-          message: 'No tree state pages are available to display any of the active states: '
-              '${activeStates.map((s) => '"$s"').join(', ')}.\n\n'
-              'Make sure to add a page that can display one of the states to the $routerName.');
-      return true;
-    }());
-    return MaterialPage(
-      child: Center(
-        child: content,
-      ),
-    );
+class ChildTreeStateRouterDelegate extends _TreeStateMachineRouterDelegate {
+  ChildTreeStateRouterDelegate({
+    required List<TreeStatePage> pages,
+    bool displayStateMachineErrors = false,
+    this.supportsFinalPage = false,
+  }) : super(
+          logger: Logger('StateTreeRouterDelegate'),
+          pages: pages,
+          displayStateMachineErrors: displayStateMachineErrors,
+        );
+
+  /// If `true` (the default), an error page will be displayed if the state machine reaches a final
+  /// state, and there is no page in the pages list that can display that state.
+  final bool supportsFinalPage;
+
+  /// The key used for retrieving the current navigator.
+  @override
+  final navigatorKey = GlobalKey<NavigatorState>(debugLabel: 'ChildTreeStateRouterDelegate');
+
+  @override
+  Future<void> setNewRoutePath(StateTreeRouteInfo configuration) {
+    throw UnsupportedError('Setting route paths is not currently supported');
   }
 
-  /// Creates the stack of pages that should display the current state of the state tree.
-  ///
-  /// Currently this returns a collection of 0 or 1 pages, but once a history feature is added to
-  /// tree_state_machine, this will return a history stack which can be popped by the navigator.
-  static Iterable<TreeStatePage> _createPages(
-    Map<StateKey, TreeStatePage> pages,
-    CurrentState currentState,
-    Logger logger,
-  ) {
-    /// Return the deepest page that maps to an active state. By deepest, we mean the page that
-    /// maps to a state as far as possible from the root state. This gives the current leaf state
-    /// priority in determining the page to display, followed by its parent state, etc.
-    var activePage = currentState.activeStates.reversed
-        .map((stateKey) => MapEntry<StateKey, TreeStatePage?>(stateKey, pages[stateKey]))
-        .where((entry) => entry.value != null)
-        .map((entry) => entry.value!)
-        .firstOrNull;
-
-    // if (activePage == null) {
-    //   logger.warning(
-    //       'No pages created for ${currentState.activeStates.map((e) => "'$e'").join(', ')}');
-    // }
-
-    return activePage != null ? [activePage] : [];
-  }
-
-  static Map<StateKey, TreeStatePage> _toPageMap(
-    List<TreeStatePage> pages,
-    String paramName,
-  ) {
-    var map = <StateKey, TreeStatePage>{};
-    for (var page in pages) {
-      if (map.containsKey(page.stateKey)) {
-        throw ArgumentError('Duplicate pages defined for state ${page.stateKey}', paramName);
-      }
-      map[page.stateKey] = page;
+  @override
+  Widget build(BuildContext context) {
+    var stateMachineInfo = TreeStateMachineProvider.of(context);
+    if (stateMachineInfo == null) {
+      var message = 'Unable to find tree state machine in widget tree';
+      _log.warning(message);
+      return ErrorWidget.withDetails(message: message);
     }
-    return map;
+
+    var currentState = stateMachineInfo.currentState;
+    var activeStates = currentState.activeStates;
+    var pages = _createPagesForActiveStates(currentState).cast<Page>().toList();
+    if (pages.isEmpty) {
+      if (currentState.stateMachine.isDone && !supportsFinalPage) {
+        // If the current state machine is running as a nested machine, then there is likely a
+        // Router with a NestedStateTreeRouterDelegate higher in the widget tree, which will render
+        // a different page when the nested state machine finishes. In this case, a developer will
+        // probably not add a page for the final state to this router delegate (since after all it
+        // will never be displayed), so to avoid emitting warnings just use a transient page with
+        // no visible content.
+        pages = [MaterialPage(child: Container())];
+      } else {
+        _log.warning(
+          'No pages available to display active states ${currentState.activeStates.join(',')}',
+        );
+        pages = [_createEmptyPagesPage(activeStates, 'ChildTreeStateRouterDelegate')];
+      }
+    }
+
+    return _buildNavigatorWidget(pages, currentState, provideCurrentState: false);
+  }
+
+  @override
+  void _onTransition(CurrentState currentState, Transition transition) {
+    if (!transition.isToFinalState || supportsFinalPage) {
+      notifyListeners();
+    }
   }
 }
 
@@ -193,29 +294,23 @@ class StateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
 /// As state transitions occur within the state machine, the router delegate will determine there is
 /// a [TreeStatePage] that corresponds to the an active state of the state machine.  If a page is
 /// available, it is displayed by the [Navigator] returned by [build].
-class NestedStateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
-    with ChangeNotifier, PopNavigatorRouterDelegateMixin {
+class NestedStateTreeRouterDelegate extends _TreeStateMachineRouterDelegate {
   NestedStateTreeRouterDelegate({
     required List<TreeStatePage> pages,
-  })  : pages = pages.toList(),
-        _pageMap = StateTreeRouterDelegate._toPageMap(pages, 'pages');
-
-  /// The list of pages that can be displayed by this router delegate.
-  final List<TreeStatePage> pages;
+    bool displayStateMachineErrors = false,
+  }) : super(
+          logger: Logger('StateTreeRouterDelegate'),
+          pages: pages,
+          displayStateMachineErrors: displayStateMachineErrors,
+        );
 
   /// The key used for retrieving the current navigator.
   @override
   final navigatorKey = GlobalKey<NavigatorState>(debugLabel: 'NestedStateTreeRouterDelegate');
 
-  final Map<StateKey, TreeStatePage> _pageMap;
-
-  final _log = Logger('tree_state_router.NestedMachineRouterDelegate');
-
   @override
-  Future<void> setNewRoutePath(StateTreeRouteInfo configuration) async {
-    // This is not required for an nested router delegate because it does not
-    // parse route
-    assert(false);
+  Future<void> setNewRoutePath(StateTreeRouteInfo configuration) {
+    throw UnsupportedError('Setting route paths is not currently supported');
   }
 
   @override
@@ -239,123 +334,22 @@ class NestedStateTreeRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
       return ErrorWidget.withDetails(message: message);
     }
 
-    return TreeStateMachineProvider(
-      currentState: nestedMachineData.nestedState,
-      child: TreeStateMachineEvents(
-        onTransition: _onTransition,
-        child: Navigator(
-          key: navigatorKey,
-          transitionDelegate: _TreeStateRouteTransitionDelegate(),
-          pages: _createStateTreePages(context, nestedMachineData.nestedState),
-          onPopPage: (route, result) {
-            _log.finer('Popping page for state ${(route.settings as TreeStatePage).stateKey}');
-            if (!route.didPop(result)) return false;
-            notifyListeners();
-            return route.didPop(result);
-          },
-        ),
-      ),
-    );
+    var pages = _createPagesForActiveStates(nestedMachineData.nestedCurrentState).toList();
+    return _buildNavigatorWidget(pages, nestedMachineData.nestedCurrentState,
+        provideCurrentState: true);
   }
 
-  void _onTransition(Transition trans) {
+  @override
+  void _onTransition(CurrentState currentState, Transition transition) {
     // Do not notify when the nested state machine reaches a final state. If we were to notify, then
     // we would schedule a call to build for this router.  However, the parent machine tree state
     // that owns the nested state machine transition to a different state when the final state is
     // reached, which means that when the scheduled build actually runs,
     // currentState.dataValue<NestedMachineData>() will no longer find a nested state machine, and
     // the build method will fail.
-    if (!trans.isToFinalState) {
+    if (!transition.isToFinalState) {
       notifyListeners();
     }
-  }
-
-  List<TreeStatePage> _createStateTreePages(BuildContext context, CurrentState nestedCurrentState) {
-    return StateTreeRouterDelegate._createPages(_pageMap, nestedCurrentState, _log).toList();
-  }
-}
-
-class ChildTreeStateRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
-    with ChangeNotifier, PopNavigatorRouterDelegateMixin {
-  ChildTreeStateRouterDelegate({
-    required List<TreeStatePage> pages,
-    this.supportsFinalPage = true,
-  }) : _treeStatePages = StateTreeRouterDelegate._toPageMap(pages, 'pages');
-
-  @override
-  final navigatorKey = GlobalKey<NavigatorState>(debugLabel: 'ChildTreeStateRouterDelegate');
-
-  /// If `true` (the default), an error page will be displayed if the state machine reaches a final
-  /// state, and there is no page in the pages list that can display that state.
-  final bool supportsFinalPage;
-
-  final Map<StateKey, TreeStatePage> _treeStatePages;
-  final _log = Logger('ChildTreeStateRouterDelegate');
-
-  @override
-  Future<void> setNewRoutePath(StateTreeRouteInfo configuration) async {
-    // This is not required for an nested router delegate because it does not
-    // parse routes
-    assert(false);
-  }
-
-  void _onTransition(Transition trans) {
-    if (!trans.isToFinalState || supportsFinalPage) {
-      notifyListeners();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    var stateMachineInfo = TreeStateMachineProvider.of(context);
-    if (stateMachineInfo == null) {
-      var message = 'Unable to find tree state machine in widget tree';
-      _log.warning(message);
-      return ErrorWidget.withDetails(message: message);
-    }
-
-    var currentState = stateMachineInfo.currentState;
-    var activeStates = currentState.activeStates;
-    var pages = StateTreeRouterDelegate._createPages(_treeStatePages, currentState, _log)
-        .cast<Page>()
-        .toList();
-
-    if (pages.isEmpty) {
-      if (currentState.stateMachine.isDone && !supportsFinalPage) {
-        // If the current state machine is running as a nested machine, then there is likely a
-        // Router with a NestedStateTreeRouterDelegate higher in the widget tree, which will render
-        // a different page when the nested state machine finishes. In this case, a developer will
-        // probably not add a page for the final state to this router delegate (since after all it
-        // will never be displayed), so to avoid emitting warnings just use a transient page with
-        // no visible content.
-        pages = [MaterialPage(child: Container())];
-      } else {
-        _log.warning(
-          'No pages available to display active states ${currentState.activeStates.join(',')}',
-        );
-        pages = [_createEmptyPagesPage(activeStates)];
-      }
-    }
-
-    return TreeStateMachineEvents(
-      onTransition: _onTransition,
-      child: Navigator(
-        key: navigatorKey,
-        transitionDelegate: _TreeStateRouteTransitionDelegate(),
-        pages: pages,
-        onPopPage: (route, result) {
-          _log.finer('Popping page for state ${(route.settings as TreeStatePage).stateKey}');
-          if (!route.didPop(result)) return false;
-          notifyListeners();
-          return route.didPop(result);
-        },
-      ),
-    );
-  }
-
-  Page<dynamic> _createEmptyPagesPage(List<StateKey> activeStates) {
-    return StateTreeRouterDelegate._createEmptyPagesPage(
-        activeStates, 'ChildTreeStateRouterDelegate');
   }
 }
 
@@ -395,17 +389,21 @@ class TreeStatePage extends MaterialPage<void> {
     );
   }
 
-  /// Creates a [TreeStatePage] that displays the data tree state, with state data of type [D] and
-  /// identified by [stateKey], using the provided [buillder] function.
+  /// Creates a [TreeStatePage] that displays the tree state, identified by [stateKey], using the
+  /// provided [buillder] function.
+  ///
+  ///
   static TreeStatePage forDataState<D>(
     StateKey stateKey,
-    Widget Function(BuildContext, D, CurrentState) build,
-  ) {
+    Widget Function(BuildContext, D, CurrentState) build, {
+    StateKey? dataStateKey,
+  }) {
     return TreeStatePage._(
       stateKey,
       (buildContext) => DataTreeStateBuilder<D>(
         key: ValueKey(stateKey),
         stateKey: stateKey,
+        dataStateKey: dataStateKey,
         builder: build,
       ),
     );
@@ -413,13 +411,17 @@ class TreeStatePage extends MaterialPage<void> {
 
   static TreeStatePage forDataState2<D, DAnc>(
     StateKey stateKey,
-    Widget Function(BuildContext, D, DAnc, CurrentState) build,
-  ) {
+    Widget Function(BuildContext, D, DAnc, CurrentState) build, {
+    StateKey? dataStateKey1,
+    StateKey? dataStateKey2,
+  }) {
     return TreeStatePage._(
       stateKey,
       (buildContext) => DataTreeStateBuilder2<D, DAnc>(
         key: ValueKey(stateKey),
         stateKey: stateKey,
+        dataStateKey1: dataStateKey1,
+        dataStateKey2: dataStateKey2,
         builder: build,
       ),
     );
