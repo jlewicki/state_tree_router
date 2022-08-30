@@ -7,9 +7,9 @@ import 'package:state_tree_router/state_tree_router.dart';
 import 'package:tree_state_machine/tree_builders.dart';
 import 'package:tree_state_machine/tree_state_machine.dart';
 
-abstract class _TreeStateMachineRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
+abstract class _BaseTreeStateRouterDelegate extends RouterDelegate<StateTreeRouteInfo>
     with ChangeNotifier, PopNavigatorRouterDelegateMixin {
-  _TreeStateMachineRouterDelegate({
+  _BaseTreeStateRouterDelegate({
     required Logger logger,
     required this.pages,
     this.displayStateMachineErrors = false,
@@ -142,7 +142,7 @@ abstract class _TreeStateMachineRouterDelegate extends RouterDelegate<StateTreeR
 /// As state transitions occur within the state machine, the router delegate will determine there is
 /// a [TreeStatePage] that corresponds to the an active state of the state machine.  If a page is
 /// available, it is displayed by the [Navigator] returned by [build].
-class StateTreeRouterDelegate extends _TreeStateMachineRouterDelegate {
+class StateTreeRouterDelegate extends _BaseTreeStateRouterDelegate {
   StateTreeRouterDelegate({
     required this.stateMachine,
     required List<TreeStatePage> pages,
@@ -229,7 +229,7 @@ class StateTreeRouterDelegate extends _TreeStateMachineRouterDelegate {
 /// As state transitions occur within the parent state machine, this router delegate will determine
 /// if there is a [TreeStatePage] that corresponds to the an active state of the state machine. If a
 /// page is available, it is displayed by the [Navigator] returned by [build].
-class ChildTreeStateRouterDelegate extends _TreeStateMachineRouterDelegate {
+class ChildTreeStateRouterDelegate extends _BaseTreeStateRouterDelegate {
   ChildTreeStateRouterDelegate({
     required List<TreeStatePage> pages,
     bool displayStateMachineErrors = false,
@@ -306,7 +306,7 @@ class ChildTreeStateRouterDelegate extends _TreeStateMachineRouterDelegate {
 /// As state transitions occur within the state machine, the router delegate will determine there is
 /// a [TreeStatePage] that corresponds to the an active state of the state machine.  If a page is
 /// available, it is displayed by the [Navigator] returned by [build].
-class NestedStateTreeRouterDelegate extends _TreeStateMachineRouterDelegate {
+class NestedStateTreeRouterDelegate extends _BaseTreeStateRouterDelegate {
   NestedStateTreeRouterDelegate({
     required List<TreeStatePage> pages,
     bool displayStateMachineErrors = false,
