@@ -217,11 +217,23 @@ class StateTreeRouterDelegate extends _TreeStateMachineRouterDelegate {
   }
 }
 
+/// A [RouterDelegate] that receives routing information from the state transitions of a
+/// [TreeStateMachine] inherited from a parent [StateTreeRouterDelegate].
+///
+/// An application configures [StateTreeRouterDelegate] that indicate how individual states in
+/// the state machine should be visualized. This router does not need to be with a state machine
+/// instance. because this router delegate is intended to be nested within an outer router configured
+/// with a [StateTreeRouterDelegate]. This router will share the same state machine instance with
+/// the outer [StateTreeRouterDelegate].
+///
+/// As state transitions occur within the parent state machine, this router delegate will determine
+/// if there is a [TreeStatePage] that corresponds to the an active state of the state machine. If a
+/// page is available, it is displayed by the [Navigator] returned by [build].
 class ChildTreeStateRouterDelegate extends _TreeStateMachineRouterDelegate {
   ChildTreeStateRouterDelegate({
     required List<TreeStatePage> pages,
     bool displayStateMachineErrors = false,
-    this.supportsFinalPage = false,
+    this.supportsFinalPage = true,
   }) : super(
           logger: Logger('StateTreeRouterDelegate'),
           pages: pages,
