@@ -63,7 +63,7 @@ class SimpleStateTree {
 }
 ```
 
-Next let's define pages that can display these states. When the pressed buttons, messahes are dispatched to the state 
+Next let's define pages that can display these states. As the user presses buttons, messages are dispatched to the state 
 machine using the `currentState` parameter.
 
 ```dart
