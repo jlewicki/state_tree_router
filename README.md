@@ -37,28 +37,34 @@ class SimpleStateTree {
   StateTreeBuilder treeBuilder() {
     var b = StateTreeBuilder(initialState: States.enterText);
     
-    b.state(States.enterText, (b) {
-      b.onMessage<ToUppercase>(
-         (b) => b.goTo(States.showUppercase, 
-         payload: (ctx) => ctx.message.text));
+     b.state(_S.enterText, (b) {
+      b.onMessage<ToUppercase>((b) => b.goTo(_S.showUppercase, payload: (ctx) => ctx.message.text));
     });
 
     b.dataState<String>(
-      States.showUppercase,
+      _S.showUppercase,
       InitialData.run((ctx) => (ctx.payload as String).toUpperCase()),
       (b) {
-        b.onMessageValue(Messages.finish, (b) => b.goTo(SimpleStates.finished));
+        b.onMessageValue(
+          Messages.finish,
+          (b) => b.goTo(SimpleStates.finished, payload: (ctx) => ctx.data),
+        );
       },
     );
 
-    b.finalState(States.finished, emptyFinalState);
+    b.finalDataState<String>(
+      _S.finished,
+      InitialData.run((ctx) => ctx.payloadOrThrow<String>()}),
+      emptyFinalState,
+    );
 
     return b;
   }
 }
 ```
 
-Next let's define pages that can display these states: 
+Next let's define pages that can display these states. When the pressed buttons, messahes are dispatched to the state 
+machine using the `currentState` parameter.
 
 ```dart
 final enterTextPage = TreeStatePage.forState(SimpleStates.enterText, (buildContext, currentState) {
@@ -114,9 +120,26 @@ final toUppercasePage = TreeStatePage.forDataState<String>(
     );
   },
 );
+
+final finishedPage = TreeStatePage.forDataState<String>(
+   SimpleStates.finished,
+   (buildContext, text, currentState) {
+      return Column(
+         mainAxisAlignment: MainAxisAlignment.center,
+         children: [
+            Text(
+               'Final result: $text',
+               style: const TextStyle(fontSize: 24),
+            ),
+         ],
+      );
+   },
+);
 ```
 
-Finally let's define an app that will perform routing based on the state transitions of the state machinhe.
+Finally let's define an app that will perform routing based on the state transitions of the state machine. The 
+`Router` is intitalized with a `StateTreeRouterDelegate`, and this router will detect state transitions and display
+the page that corresponds to the current state of the state machine.
 ```dart
 /// Now define an app
 class SimpleApp extends StatefulWidget {
@@ -137,6 +160,7 @@ class _SimpleAppState extends State<SimpleApp> {
          pages: [
             enterTextPage,
             toUppercasePage,
+            finishedPage
          ],
       ),
       color: Colors.amberAccent,
