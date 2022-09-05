@@ -173,9 +173,11 @@ class StateTreeRouterDelegate extends _BaseTreeStateRouterDelegate {
   @override
   Future<void> setNewRoutePath(StateTreeRouteInfo configuration) async {
     if (stateMachine.isStarted) {
-      await stateMachine.stop();
+      _currentState!.post(RoutingMessage(configuration.currentState));
+//      await stateMachine.stop();
+    } else {
+      _currentState = await stateMachine.start(configuration.currentState);
     }
-    _currentState = await stateMachine.start(configuration.currentState);
   }
 
   @override
@@ -445,10 +447,20 @@ class StateTreeRouteInfo {
   StateTreeRouteInfo(this.currentState);
 }
 
-class StateTreeRouteInfoParser extends RouteInformationParser<StateTreeRouteInfo> {
-  StateTreeRouteInfoParser(this._rootKey);
+class StateTreeRouteInformationParser extends RouteInformationParser<StateTreeRouteInfo> {
+  StateTreeRouteInformationParser(this._rootKey);
 
   final StateKey _rootKey;
+  final Map<StateKey, _TreeStateRouteInfo> _treeStateRouteParsers = {};
+  late final _depthOrderedParsers =
+      _treeStateRouteParsers.values.where((p) => p.parser != null).sortedBy<num>(_parserDepth);
+
+  void onTreeNodeBuilt(TreeNodeInfo node) {
+    _treeStateRouteParsers[node.key] = _TreeStateRouteInfo(
+      RoutableStateExtensionBuilder.getRouteParser(node.metadata),
+      node.parent?.key,
+    );
+  }
 
   @override
   Future<StateTreeRouteInfo> parseRouteInformation(RouteInformation routeInformation) {
@@ -456,8 +468,23 @@ class StateTreeRouteInfoParser extends RouteInformationParser<StateTreeRouteInfo
       return SynchronousFuture(StateTreeRouteInfo(_rootKey));
     }
 
+    for (var parser in _depthOrderedParsers) {
+      var parseResult = parser.parser!.parseRoute(routeInformation);
+      if (parseResult != null) {}
+    }
+
     throw UnimplementedError('Route parsing is not yet supported.');
   }
+
+  int _parserDepth(_TreeStateRouteInfo info) {
+    return info.parentState == null ? 1 : _parserDepth(_treeStateRouteParsers[info.parentState]!);
+  }
+}
+
+class _TreeStateRouteInfo {
+  _TreeStateRouteInfo(this.parser, this.parentState);
+  TreeStateRouteParser? parser;
+  StateKey? parentState;
 }
 
 // Used for degbugging purposes.

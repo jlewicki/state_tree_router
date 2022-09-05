@@ -159,9 +159,9 @@ packages:
   tree_state_machine:
     dependency: "direct main"
     description:
-      name: tree_state_machine
-      url: "https://pub.dartlang.org"
-    source: hosted
+      path: "../tree_state_machine"
+      relative: true
+    source: path
     version: "2.3.0"
   vector_math:
     dependency: transitive
